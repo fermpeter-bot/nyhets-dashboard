@@ -1,0 +1,11 @@
+{
+  "name": "nyhets-dashboard",
+  "version": "1.0.0",
+  "main": "websocket_lyssnare.js",
+  "scripts": {
+    "start": "node websocket_lyssnare.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}
