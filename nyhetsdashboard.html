@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live: Nyhetsflashar</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* Tailwind slate-900 */
+            color: #f8fafc;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        /* Custom scrollbar for the feed */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #1e293b; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #475569; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #64748b; 
+        }
+
+        /* Animation for new flashes sliding in */
+        @keyframes slideInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .animate-slide-in {
+            animation: slideInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        /* Pulse animation for the live indicator */
+        @keyframes pulse-red {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+        .live-dot {
+            animation: pulse-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- Mock Data & Configuration ---
+        const MEDIA_SOURCES = {
+            'Aftonbladet': { bg: 'bg-yellow-400', text: 'text-black', border: 'border-yellow-500' },
+            'Expressen': { bg: 'bg-red-600', text: 'text-white', border: 'border-red-700' },
+            'SVT Nyheter': { bg: 'bg-red-800', text: 'text-white', border: 'border-red-900' },
+            'Omni': { bg: 'bg-white', text: 'text-black', border: 'border-gray-300' },
+            'SR Ekot': { bg: 'bg-emerald-600', text: 'text-white', border: 'border-emerald-700' }
+        };
+
+        const MOCK_HEADLINES = [
+            "Regeringen håller pressträff om det ekonomiska läget",
+            "Stort strömavbrott i södra Sverige – tusentals utan el",
+            "Nya räntebeskedet: Riksbanken sänker styrräntan",
+            "Trafikkaos på E4 efter kraftigt snöfall",
+            "Svensk succé i skid-VM – tar historiskt guld",
+            "Polisen spärrar av stort område efter misstänkt föremål",
+            "Internationella larmet: Nytt oväder på väg in över Europa",
+            "Techjätten varslar 1000 anställda globalt",
+            "Så blir vädret i helgen: 'Risk för kraftiga vindar'",
+            "Avslöjande: Hemliga dokument visar okända spelet bakom kulisserna"
+        ];
+
+        const CATEGORIES = ["Inrikes", "Utrikes", "Ekonomi", "Sport", "Väder"];
+
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+
+        // Börja tomt, vi inväntar riktiga flashar från vår backend
+        const initialFlashes = []; 
+
+        // --- Components ---
+
+        const IconBell = () => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        );
+
+        const IconFilter = () => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+        );
+
+        const FlashCard = ({ flash }) => {
+            const sourceStyle = MEDIA_SOURCES[flash.source];
+            const timeString = flash.timestamp.toLocaleTimeString('sv-SE', { hour: '2-digit', minute:'2-digit', second:'2-digit' });
+
+            return (
+                <div className={`
+                    relative p-4 rounded-xl mb-4 border border-slate-700 bg-slate-800/50 backdrop-blur-sm shadow-lg
+                    transition-all duration-300 hover:border-slate-500
+                    ${flash.isNew ? 'animate-slide-in' : ''}
+                    ${flash.isBreaking ? 'ring-2 ring-red-500/50' : ''}
+                `}>
+                    <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center gap-2">
+                            <span className={`text-xs font-bold px-2 py-1 rounded-md ${sourceStyle.bg} ${sourceStyle.text} ${sourceStyle.border} border`}>
+                                {flash.source}
+                            </span>
+                            <span className="text-xs text-slate-400 bg-slate-700/50 px-2 py-1 rounded-md">
+                                {flash.category}
+                            </span>
+                        </div>
+                        <div className="text-xs font-mono text-slate-400 flex items-center gap-1">
+                            {timeString}
+                        </div>
+                    </div>
+                    
+                    <h3 className={`text-lg sm:text-xl font-semibold mt-2 leading-tight ${flash.isBreaking ? 'text-red-400' : 'text-slate-100'}`}>
+                        {flash.headline}
+                    </h3>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [flashes, setFlashes] = useState(initialFlashes);
+            const [activeFilter, setActiveFilter] = useState('Alla');
+            const [isLive, setIsLive] = useState(true);
+
+            // Remove 'isNew' flag after animation completes
+            useEffect(() => {
+                const timer = setTimeout(() => {
+                    setFlashes(current => current.map(f => ({ ...f, isNew: false })));
+                }, 500);
+                return () => clearTimeout(timer);
+            }, [flashes.length]);
+
+            // Anslut till backend via WebSockets
+            useEffect(() => {
+                if (!isLive) return;
+
+                // Skapa dynamisk URL: wss:// om sidan är https, annars ws://
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}`;
+                
+                console.log("Ansluter till backend på:", wsUrl);
+                const ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => {
+                    console.log('Ansluten till Nyhets-backend!');
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        // Formatera datan för vår frontend
+                        const newFlash = {
+                            id: generateId(),
+                            source: data.source,
+                            headline: data.headline,
+                            category: "Flash", // Standarkategori för inkommande
+                            timestamp: new Date(),
+                            isBreaking: true,
+                            isNew: true,
+                            url: data.url
+                        };
+
+                        setFlashes(prev => [newFlash, ...prev].slice(0, 50)); // Spara max 50 senaste
+                    } catch (err) {
+                        console.error('Fel vid tolkning av flash:', err);
+                    }
+                };
+
+                ws.onclose = () => {
+                    console.log('Anslutning till backend bröts. Laddar om sidan om 5 sekunder...');
+                    setTimeout(() => window.location.reload(), 5000);
+                };
+
+                return () => ws.close();
+            }, [isLive]);
+
+            const filteredFlashes = activeFilter === 'Alla' 
+                ? flashes 
+                : flashes.filter(f => f.source === activeFilter);
+
+            const sources = ['Alla', ...Object.keys(MEDIA_SOURCES)];
+
+            return (
+                <div className="min-h-screen flex flex-col md:flex-row">
+                    
+                    {/* Sidebar / Filters */}
+                    <aside className="w-full md:w-64 bg-slate-900 border-r border-slate-800 p-4 flex flex-col z-10 shadow-2xl">
+                        <div className="flex items-center gap-3 mb-8 px-2 mt-2">
+                            <div className="p-2 bg-blue-600 rounded-lg shadow-lg shadow-blue-500/20">
+                                <IconBell />
+                            </div>
+                            <h1 className="text-xl font-bold tracking-tight">Nyhets<span className="text-blue-400">Flash</span></h1>
+                        </div>
+
+                        <div className="mb-6 flex items-center justify-between px-2 bg-slate-800/50 p-3 rounded-lg border border-slate-700">
+                            <span className="text-sm font-medium text-slate-300">Live-uppdatering</span>
+                            <button 
+                                onClick={() => setIsLive(!isLive)}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isLive ? 'bg-blue-600' : 'bg-slate-600'}`}
+                            >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isLive ? 'translate-x-6' : 'translate-x-1'}`} />
+                            </button>
+                        </div>
+
+                        <div className="flex-1">
+                            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 px-2 flex items-center gap-2">
+                                <IconFilter /> Filtrera Källor
+                            </h2>
+                            <div className="space-y-1 flex flex-row md:flex-col overflow-x-auto custom-scrollbar pb-2 md:pb-0">
+                                {sources.map(source => (
+                                    <button
+                                        key={source}
+                                        onClick={() => setActiveFilter(source)}
+                                        className={`
+                                            flex-shrink-0 w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200
+                                            ${activeFilter === source 
+                                                ? 'bg-blue-600 text-white shadow-md' 
+                                                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}
+                                        `}
+                                    >
+                                        {source}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </aside>
+
+                    {/* Main Content Area */}
+                    <main className="flex-1 p-4 md:p-8 flex flex-col h-screen overflow-hidden">
+                        
+                        {/* Header */}
+                        <header className="flex justify-between items-end mb-6 pb-4 border-b border-slate-800">
+                            <div>
+                                <h2 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
+                                    Senaste nytt
+                                    {isLive && (
+                                        <span className="flex items-center gap-2 text-sm font-medium text-red-500 bg-red-500/10 px-2 py-1 rounded-full border border-red-500/20">
+                                            <span className="w-2 h-2 rounded-full bg-red-500 live-dot"></span>
+                                            LIVE
+                                        </span>
+                                    )}
+                                </h2>
+                                <p className="text-sm text-slate-400 mt-1">Visar {filteredFlashes.length} flashar från {activeFilter.toLowerCase()}</p>
+                            </div>
+                        </header>
+
+                        {/* Feed */}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 md:pr-4">
+                            <div className="max-w-3xl mx-auto w-full pb-20">
+                                {filteredFlashes.length === 0 ? (
+                                    <div className="text-center py-20 text-slate-500">
+                                        <IconBell className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                                        <p>Inga nyheter från denna källa just nu.</p>
+                                    </div>
+                                ) : (
+                                    filteredFlashes.map(flash => (
+                                        <FlashCard key={flash.id} flash={flash} />
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
